@@ -1,12 +1,19 @@
-import { BufferGeometry, Float32BufferAttribute, Vector3 } from "three";
+import {
+  BufferGeometry,
+  Float32BufferAttribute,
+  PlaneGeometry,
+  SphereGeometry,
+  Uint16BufferAttribute,
+  Vector3,
+} from "three";
 import { lerp } from "three/src/math/MathUtils";
 
 class SpherePlaneGeometry extends BufferGeometry {
   constructor(
+    startTransition = 0.5 /* transition between plane and sphere geometries. plane 0 -> 1  sphere */,
     radius = 1,
     widthSegments = 32,
     heightSegments = 16,
-    transition = 0.5,
     phiStart = 0,
     phiLength = Math.PI * 2,
     thetaStart = 0,
@@ -14,122 +21,136 @@ class SpherePlaneGeometry extends BufferGeometry {
   ) {
     super();
 
-    this.type = "SphereGeometry";
+    this.type = "SpherePlaneGeometry";
 
     this.parameters = {
+      startTransition: startTransition,
       radius: radius,
       widthSegments: widthSegments,
       heightSegments: heightSegments,
-      transition: transition,
       phiStart: phiStart,
       phiLength: phiLength,
       thetaStart: thetaStart,
       thetaLength: thetaLength,
     };
 
-    // widthSegments = Math.max(3, Math.floor(widthSegments));
-    // heightSegments = Math.max(2, Math.floor(heightSegments));
+    // plane geometry
 
-    const thetaEnd = Math.min(thetaStart + thetaLength, Math.PI);
+    this.planeGeometry = new PlaneGeometry(
+      radius * 2,
+      radius * 2,
+      widthSegments,
+      heightSegments
+    );
 
-    let index = 0;
-    const grid = [];
-
-    const vertex = new Vector3();
-    const normal = new Vector3();
-
-    // buffers
-
-    const indices = [];
-    const vertices = [];
-    const normals = [];
-    const uvs = [];
-
-    const segmentWidth = (phiLength / widthSegments) * 1;
-    const segment_height = (thetaLength / heightSegments) * 1;
-
-    const radiusHalf = radius / 2;
-    const height_half = radiusHalf;
-
-    // generate vertices, normals and uvs
-
-    for (let iy = 0; iy <= heightSegments; iy++) {
-      const verticesRow = [];
-
-      const v = iy / heightSegments;
-
-      // special case for the poles
-
-      let uOffset = 0;
-
-      if (iy === 0 && thetaStart === 0) {
-        uOffset = 0.5 / widthSegments;
-      } else if (iy === heightSegments && thetaEnd === Math.PI) {
-        uOffset = -0.5 / widthSegments;
-      }
-
-      const planeY = iy * segment_height - height_half;
-
-      for (let ix = 0; ix <= widthSegments; ix++) {
-        const u = ix / widthSegments;
-
-        // vertex
-
-        const planeX = -radiusHalf + (ix * segmentWidth - radiusHalf);
-        const planeZ = -radiusHalf + (iy * segmentWidth - radiusHalf);
-
-        const sphereX =
-          -radius *
-          Math.cos(phiStart + u * phiLength) *
-          Math.sin(thetaStart + v * thetaLength);
-        const sphereY = radius * Math.cos(thetaStart + v * thetaLength);
-        const sphereZ =
-          radius *
-          Math.sin(phiStart + u * phiLength) *
-          Math.sin(thetaStart + v * thetaLength);
-
-        vertex.x = lerp(planeX, sphereX, transition);
-        vertex.y = lerp(planeY, sphereY, transition);
-        vertex.z = lerp(planeZ, sphereZ, transition);
-
-        vertices.push(vertex.x, vertex.y, vertex.z);
-
-        // normal
-
-        normal.copy(vertex).normalize();
-        normals.push(normal.x, normal.y, normal.z);
-
-        // uv
-
-        uvs.push(u + uOffset, 1 - v);
-
-        verticesRow.push(index++);
-      }
-
-      grid.push(verticesRow);
-    }
-
-    // indices
-
-    for (let iy = 0; iy < heightSegments; iy++) {
-      for (let ix = 0; ix < widthSegments; ix++) {
-        const a = grid[iy][ix + 1];
-        const b = grid[iy][ix];
-        const c = grid[iy + 1][ix];
-        const d = grid[iy + 1][ix + 1];
-
-        if (iy !== 0 || thetaStart > 0) indices.push(a, b, d);
-        if (iy !== heightSegments - 1 || thetaEnd < Math.PI)
-          indices.push(b, c, d);
-      }
-    }
+    // sphere geometry
+    this.sphereGeometry = new SphereGeometry(
+      radius,
+      widthSegments,
+      heightSegments,
+      phiStart,
+      phiLength,
+      thetaStart,
+      thetaLength
+    );
 
     // build geometry
 
-    this.setIndex(indices);
+    // set default values to plane values
+
+    const vertices = this.planeGeometry.attributes.position.array;
+    const normals = this.planeGeometry.attributes.normal.array;
+    const uvs = this.planeGeometry.attributes.uv.array;
+    const index = this.planeGeometry.index.array;
+
+    if (index) {
+      this.setIndex(new Uint16BufferAttribute(index, 1));
+    }
     this.setAttribute("position", new Float32BufferAttribute(vertices, 3));
     this.setAttribute("normal", new Float32BufferAttribute(normals, 3));
     this.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
+
+    this.setTransition(startTransition);
+  }
+
+  setTransition(transition, easing = lerp) {
+    this.parameters.transition = transition;
+
+    const position = this.attributes.position;
+    const normal = this.attributes.normal;
+    const uv = this.attributes.uv;
+
+    /**
+     * Transition between plane and sphere geometries
+     * 0 = plane
+     * 1 = sphere
+     */
+    for (let i = 0; i < position.count; i++) {
+      /**
+       * position
+       */
+      position.setXYZ(
+        i,
+        easing(
+          this.planeGeometry.attributes.position.getX(i),
+          this.sphereGeometry.attributes.position.getX(i),
+          transition
+        ),
+        easing(
+          this.planeGeometry.attributes.position.getY(i),
+          this.sphereGeometry.attributes.position.getY(i),
+          transition
+        ),
+        easing(
+          this.planeGeometry.attributes.position.getZ(i),
+          this.sphereGeometry.attributes.position.getZ(i),
+          transition
+        )
+      );
+
+      /**
+       * normal
+       */
+      normal.setXYZ(
+        i,
+        easing(
+          this.planeGeometry.attributes.normal.getX(i),
+          this.sphereGeometry.attributes.normal.getX(i),
+          transition
+        ),
+        easing(
+          this.planeGeometry.attributes.normal.getY(i),
+          this.sphereGeometry.attributes.normal.getY(i),
+          transition
+        ),
+        easing(
+          this.planeGeometry.attributes.normal.getZ(i),
+          this.sphereGeometry.attributes.normal.getZ(i),
+          transition
+        )
+      );
+
+      /**
+       * uv
+       */
+      uv.setXY(
+        i,
+        easing(
+          this.planeGeometry.attributes.uv.getX(i),
+          this.sphereGeometry.attributes.uv.getX(i),
+          transition
+        ),
+        easing(
+          this.planeGeometry.attributes.uv.getY(i),
+          this.sphereGeometry.attributes.uv.getY(i),
+          transition
+        )
+      );
+    }
+
+    this.attributes.position.needsUpdate = true;
+    this.attributes.normal.needsUpdate = true;
+    this.attributes.uv.needsUpdate = true;
   }
 
   copy(source) {
@@ -138,6 +159,12 @@ class SpherePlaneGeometry extends BufferGeometry {
     this.parameters = Object.assign({}, source.parameters);
 
     return this;
+  }
+
+  dispose() {
+    this.dispatchEvent({ type: "dispose" });
+    this.planeGeometry.dispose();
+    this.sphereGeometry.dispose();
   }
 
   static fromJSON(data) {
