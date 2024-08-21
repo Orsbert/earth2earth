@@ -4,15 +4,17 @@ import {
   Float,
   OrbitControls,
   PresentationControls,
+  RandomizedLight,
   Torus,
   TorusKnot,
 } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useControls } from "leva";
-import React, { useLayoutEffect, useRef, useState } from "react";
+import React, { Suspense, useLayoutEffect, useRef, useState } from "react";
 import { MathUtils } from "three";
 import { useStore } from "../helpers/zustandStore";
 import { SpherePlane } from "./SpherePlane";
+import { EarthToEarthScene } from "./EarthToEarthScene";
 
 export const pointer = {
   x: 0,
@@ -34,7 +36,7 @@ export function MainCanvas() {
     <Canvas
       shadows
       onPointerMove={handlerPointerMove}
-      camera={{ position: [0, 0.5, 8], fov: 35, far: 600 }}
+      camera={{ position: [0, 0, 0], fov: 35, far: 2000, focus: 50 }}
       style={{
         position: "sticky",
         top: "0",
@@ -91,18 +93,11 @@ const StageRenderer = () => {
   const xCameraOffset = isPotrait ? 0.03 : 0.07;
   const yCameraOffset = isPotrait ? 0.08 : 0.2;
 
-  // useFrame((_, delta) => {
-  // pointer.x = MathUtils.damp(pointer.x, rawPointer.x, 3.8, delta);
-  // pointer.y = MathUtils.damp(pointer.y, rawPointer.y, 3.8, delta);
-
-  // camera.rotation.x = -pointer.y * xCameraOffset;
-  // camera.rotation.y = -pointer.x * yCameraOffset;
-  // });
-
   return (
     <group scale={scale}>
-      <OrbitControls />
       <Model />
+      <ambientLight />
+      <RandomizedLight intensity={2} />
     </group>
   );
 };
@@ -130,6 +125,9 @@ function Model() {
   return (
     <animated.group ref={ref} {...springs}>
       <SpherePlane />
+      <Suspense fallback={null}>
+        <EarthToEarthScene />
+      </Suspense>
     </animated.group>
   );
 }
